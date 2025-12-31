@@ -1,0 +1,665 @@
+syntax = "proto3";
+
+package vsf.news.proto;
+
+import "shared/common.proto";
+
+option java_multiple_files = true;
+option java_package = "vsf.news.proto";
+option java_outer_classname = "ServiceNewsProto";
+
+// --- Shared Enums ---
+
+enum EntityType {
+  UNSPECIFIED = 0;
+  CONTENT = 1;
+  CATEGORY = 2;
+  SOURCE = 3;
+  SUMMARY = 4;
+  VOICE = 5;
+  AI_VIOLATION = 6;
+  REPORT = 7;
+  PUBLISHER = 8;
+  COMMENT = 9; // Added to support engagement on comments
+  VIDEO = 10;  // Added to support engagement on videos
+}
+
+enum Action {
+  ACTION_UNSPECIFIED = 0;
+  CREATED = 1;
+  UPDATED = 2;
+  DELETED = 3;
+
+  STATUS_CHANGED = 10;
+  REVIEW_CHANGED = 11;
+  AUDIO_CHANGED = 12;
+
+  CACHE_EVICT = 90;
+}
+
+enum EngagementAction {
+  ENGAGEMENT_ACTION_UNSPECIFIED = 0;
+  LIKE = 1;
+  SHARE = 2;
+  BOOKMARK = 3;
+  VIEW = 4;
+}
+
+// --- Shared Messages ---
+
+message BoolResponse {
+  bool success = 1;
+}
+
+message ListIdResponse {
+  repeated string ids = 1;
+  int32 offset = 2;
+  int32 next_offset = 3;
+  bool has_next = 4;
+  int64 total = 5;
+}
+
+// --- Engagement Service ---
+
+message EngagementRequest {
+  EngagementAction action = 1;
+  EntityType entity_type = 2;
+  int64 entity_id = 3;
+  string user_id = 4;
+}
+
+message IsEngagedRequest {
+  EngagementAction action = 1;
+  EntityType entity_type = 2;
+  int64 entity_id = 3;
+  string user_id = 4;
+}
+
+message GetEngagementListRequest {
+  EngagementAction action = 1;
+  EntityType entity_type = 2;
+  int64 entity_id = 3;
+  int32 offset = 4;
+  int32 limit = 5;
+}
+
+message GetUserEngagementRequest {
+  string user_id = 1;
+  EngagementAction action = 2;
+  EntityType entity_type = 3;
+  int32 offset = 4;
+  int32 limit = 5;
+}
+
+message TotalEngagementResponse {
+  int64 total = 1;
+}
+
+service EngagementService {
+  rpc DoAction(EngagementRequest) returns (BoolResponse);
+  rpc UndoAction(EngagementRequest) returns (BoolResponse);
+  
+  rpc IsEngaged(IsEngagedRequest) returns (BoolResponse);
+  rpc GetTotal(GetEngagementListRequest) returns (TotalEngagementResponse);
+
+  // Lấy danh sách UserID đã tương tác với Entity
+  rpc GetListUser(GetEngagementListRequest) returns (ListIdResponse);
+
+  // Lấy danh sách EntityID mà User đã tương tác
+  rpc GetListEntity(GetUserEngagementRequest) returns (ListIdResponse);
+}
+
+// --- AiModerationViolation ---
+
+message AiModerationViolation {
+  int64 id = 1;
+  int64 content_id = 2;
+  string rule_code = 3;
+  string rule_title = 4;
+
+  /**
+   * Severity level
+   * 0 = info
+   * 1 = low
+   * 2 = medium
+   * 3 = high
+   * 4 = critical
+   */
+  int32 severity = 5;
+
+  string evidence = 6;
+
+  // Audit timestamps (epoch millis)
+  int64 created_at = 20;
+  int64 updated_at = 21;
+}
+
+message GetAiModerationViolationRequest {
+  int64 id = 1;
+}
+
+message MultiGetAiModerationViolationRequest {
+  repeated int64 ids = 1;
+}
+
+message GetListAiModerationViolationRequest {
+  // Filters
+  int64 content_id = 1;
+  string rule_code = 2;
+  int32 severity_from = 3;
+  int32 severity_to = 4;
+
+  // Paging
+  int32 offset = 10;
+  int32 limit = 11;
+}
+
+message ListAiModerationViolationResponse {
+  int64 content_id = 1;
+  repeated AiModerationViolation items = 2;
+  string next_cursor = 3;
+  bool has_next = 4;
+}
+
+service AiModerationViolationService {
+  rpc Get(GetAiModerationViolationRequest) returns (AiModerationViolation);
+  rpc MultiGet(MultiGetAiModerationViolationRequest) returns (ListAiModerationViolationResponse);
+  rpc GetList(GetListAiModerationViolationRequest) returns (ListAiModerationViolationResponse);
+}
+
+// --- Category ---
+enum CategoryStatus {
+  CATEGORY_STATUS_UNSPECIFIED = 0;
+  CATEGORY_STATUS_ACTIVE = 1;
+  CATEGORY_STATUS_INACTIVE = 2;
+  CATEGORY_STATUS_HIDDEN = 3;
+}
+
+message Category {
+  int64 id = 1;
+  string name = 2;
+  int64 parent_id = 3;
+  CategoryStatus status = 4;
+
+  int64 created_at = 20;
+  int64 updated_at = 21;
+}
+message GetCategoryRequest {
+  int64 id = 1;
+}
+
+message MultiGetCategoryRequest {
+  repeated int64 ids = 1;
+}
+
+message MultiGetCategoryResponse {
+  repeated Category items = 1;
+}
+
+message GetListCategoryRequest {
+  int64 parent_id = 1;
+  int32 status = 2;
+  int32 offset = 10;
+  int32 limit = 11;
+}
+
+message ListCategoryResponse {
+  repeated Category items = 1;
+  string next_cursor = 2;
+  bool has_next = 3;
+}
+
+service CategoryService {
+  rpc Get(GetCategoryRequest) returns (Category);
+  rpc MultiGet(MultiGetCategoryRequest) returns (MultiGetCategoryResponse);
+  rpc GetList(GetListCategoryRequest) returns (ListCategoryResponse);
+}
+
+// --- Content ---
+
+enum ContentStatus {
+  CONTENT_STATUS_UNSPECIFIED = 0; // default / unknown
+
+  CONTENT_STATUS_DRAFT = 1;       // nháp
+  CONTENT_STATUS_PUBLISHED = 2;   // đã publish
+  CONTENT_STATUS_HIDDEN = 3;      // ẩn khỏi FE
+  CONTENT_STATUS_DELETED = 4;     // soft delete
+}
+
+enum ContentReviewStatus {
+  CONTENT_REVIEW_STATUS_PENDING = 0;//chờ duyệt
+  CONTENT_REVIEW_STATUS_APPROVED = 1;   // đã duyệt
+  CONTENT_REVIEW_STATUS_STOPPED = 2;  // Ngừng phát hành
+  CONTENT_REVIEW_STATUS_ORIGINAL_DELETED = 3;  // Bản gốc đã xoá
+}
+
+message Content {
+
+  int64 id = 1;
+
+  // Relations
+  int64 category_id = 2;
+  int64 publisher_id = 3;
+
+  // Main content
+  string title = 4;
+  string description = 5;
+
+  // Crawl / dedupe
+  string origin_id = 6;
+  string origin_url = 7;
+  string keyword = 8;
+
+  // Thumbnail
+  string thumbnail_url = 9;
+
+  // Status
+  ContentStatus status = 10;
+  ContentReviewStatus review_status = 11;
+
+  // Reports & AI
+  int32 ai_violation_count = 12;
+  int32 report_count = 13;
+  bool has_negative_report = 14;
+  repeated string ai_violation_codes = 15;
+
+  // Audio
+  bool audio_enabled = 16;
+
+  // Metadata
+  string author = 17;
+
+  // Timeline
+  int64 published_at = 18;
+  int64 original_published_at = 19;
+  int64 reviewed_at = 20;
+  string reviewed_by = 21;
+
+  // Audit
+  int64 created_at = 22;
+  int64 updated_at = 23;
+}
+
+
+message GetContentRequest {
+  int64 id = 1;
+}
+
+message MultiGetContentRequest {
+  repeated int64 ids = 1;
+}
+
+message MultiGetContentResponse {
+  repeated Content items = 1;
+}
+
+message GetListContentRequest {
+  int64 source_id = 1;
+  int64 category_id = 2;
+  int32 status = 3;
+  int32 review_status = 4;
+  bool has_negative_report = 5;
+  bool audio_enabled = 6;
+
+  // Search
+  string keyword = 10;
+  string title = 11;
+
+  // Paging (offset-based)
+  int32 offset = 20;
+  int32 limit = 21;
+}
+
+message ListContentResponse {
+  repeated Content items = 1;
+  string next_cursor = 2;
+  bool has_next = 3;
+}
+
+message ContentFull {
+  Content content = 1;
+  ContentBody body = 2;
+}
+
+
+service ContentService {
+  rpc Get(GetContentRequest) returns (Content);
+  rpc GetFull(GetContentRequest) returns (ContentFull);
+
+  rpc MultiGet(MultiGetContentRequest) returns (MultiGetContentResponse);
+  rpc GetList(GetListContentRequest) returns (ListContentResponse);
+}
+
+// --- ContentBody ---
+
+message ContentBody {
+
+  // PK + FK -> contents.id
+  int64 content_id = 1;
+
+  // body json (raw string)
+  string body = 2;
+
+  // Audit
+  int64 created_at = 10;
+  int64 updated_at = 11;
+}
+message GetContentBodyRequest {
+  int64 content_id = 1;
+}
+
+message MultiGetContentBodyRequest {
+  repeated int64 content_ids = 1;
+}
+
+message MultiGetContentBodyResponse {
+  repeated ContentBody items = 1;
+}
+
+service ContentBodyService {
+  rpc Get(GetContentBodyRequest) returns (ContentBody);
+  rpc MultiGet(MultiGetContentBodyRequest) returns (MultiGetContentBodyResponse);
+}
+
+
+// --- ContentSummarySource ---
+enum ContentSummarySource {
+  CONTENT_SUMMARY_SOURCE_UNSPECIFIED = 0;
+
+  CONTENT_SUMMARY_SOURCE_MANUAL = 1; // editor / curated
+  CONTENT_SUMMARY_SOURCE_AI = 2;     // AI generated
+}
+message ContentSummary {
+
+  int64 id = 1;
+
+  int64 content_id = 2;
+
+  // Source of summary
+  ContentSummarySource source = 3;
+
+  // Summary texts
+  string summary_ai = 4;
+  string summary_curated = 5;
+
+  // Shared bullets
+  repeated string bullets = 6;
+
+  // AI model info
+  string model = 7;
+
+  // Audit / ownership
+  string created_by = 8;
+  string curated_by = 9;
+
+  // Timeline
+  int64 curated_at = 10;
+  int64 created_at = 11;
+  int64 updated_at = 12;
+}
+
+message GetContentSummaryRequest {
+  int64 id = 1;
+}
+
+message MultiGetContentSummaryRequest {
+  repeated int64 ids = 1;
+}
+
+message MultiGetContentSummaryResponse {
+  repeated ContentSummary items = 1;
+}
+
+message GetListContentSummaryRequest {
+  int64 content_id = 1;
+  ContentSummarySource source = 2;
+
+  // Paging
+  int32 offset = 10;
+  int32 limit = 11;
+}
+
+message ListContentSummaryResponse {
+  int64 content_id = 1;
+  repeated ContentSummary items = 2;
+  string next_cursor = 3;
+  bool has_next = 4;
+}
+
+message GetByContentIdContentSummaryRequest {
+  int64 content_id = 1;
+}
+
+message MultiGetByContentIdContentSummaryRequest {
+  repeated int64 content_ids = 1;
+}
+
+message MultiGetByContentIdContentSummaryResponse {
+  repeated ContentSummary items = 1;
+}
+
+service ContentSummaryService {
+  rpc Get(GetContentSummaryRequest) returns (ContentSummary);
+  rpc MultiGet(MultiGetContentSummaryRequest) returns (MultiGetContentSummaryResponse);
+  rpc GetList(GetListContentSummaryRequest) returns (ListContentSummaryResponse);
+
+  rpc GetByContentId(GetByContentIdContentSummaryRequest) returns (ContentSummary);
+  rpc MultiGetByContentId(MultiGetByContentIdContentSummaryRequest)returns (MultiGetByContentIdContentSummaryResponse);
+}
+
+// --- ContentReport ---
+enum ContentReportStatus {
+  CONTENT_REPORT_STATUS_UNSPECIFIED = 0;
+  CONTENT_REPORT_STATUS_OPEN = 1;
+  CONTENT_REPORT_STATUS_RESOLVED = 2;
+  CONTENT_REPORT_STATUS_REJECTED = 3;
+}
+
+message ContentReport {
+  int64 id = 1;
+
+  int64 content_id = 2;
+
+  string reporter_id = 3;
+
+  // message / reason user report
+  string message = 4;
+  string reasons = 5;
+
+  ContentReportStatus status = 6;
+
+  // audit
+  int64 created_at = 20;
+
+  // resolution info
+  string resolved_by = 21;
+  int64 resolved_at = 22;
+}
+
+
+message CreateContentReportRequest {
+  int64 content_id = 1;
+  string reporter_id = 2;
+  string message = 3;
+  string reasons = 4;
+}
+
+message CreateContentReportResponse {
+  int64 id = 1;
+}
+
+service ContentReportService {
+  rpc Create(CreateContentReportRequest) returns (CreateContentReportResponse);
+}
+
+// --- Source ---
+message Source {
+  int64 id = 1;
+  string name = 2;
+  string logo_url = 3;
+  string description = 4;
+}
+message GetSourceRequest {
+  int64 id = 1;
+}
+
+message MultiGetSourceRequest {
+  repeated int64 ids = 1;
+}
+
+message MultiGetSourceResponse {
+  repeated Source items = 1;
+}
+
+message GetListSourceRequest {
+  int32 offset = 1;
+  int32 limit = 2;
+}
+
+message ListSourceResponse {
+  repeated Source items = 1;
+  string next_cursor = 2;
+  bool has_next = 3;
+}
+
+service SourceService {
+  rpc Get(GetSourceRequest)returns (Source);
+  rpc MultiGet(MultiGetSourceRequest) returns (MultiGetSourceResponse);
+  rpc GetList(GetListSourceRequest) returns (ListSourceResponse);
+}
+
+// --- Voice ---
+enum VoiceTargetType {
+  VOICE_TARGET_TYPE_UNSPECIFIED = 0;
+
+  VOICE_TARGET_TYPE_CONTENT = 1;
+  VOICE_TARGET_TYPE_SUMMARY = 2;
+}
+
+enum VoiceStatus {
+  VOICE_STATUS_UNSPECIFIED = 0;
+
+  VOICE_STATUS_PENDING = 1;
+  VOICE_STATUS_READY = 2;
+  VOICE_STATUS_FAILED = 3;
+}
+
+message Voice {
+
+  int64 id = 1;
+
+  // Target
+  VoiceTargetType target_type = 2;
+  int64 target_id = 3;
+
+  // Voice info
+  string provider = 4;
+  string code = 5;
+  string audio_url = 6;
+  int32 duration_ms = 7;
+
+  // Status
+  VoiceStatus status = 8;
+
+  // Audit
+  int64 created_at = 9;
+  int64 updated_at = 10;
+}
+message GetVoiceRequest {
+  int64 id = 1;
+}
+
+message MultiGetVoiceRequest {
+  repeated int64 ids = 1;
+}
+
+message MultiGetVoiceResponse {
+  repeated Voice items = 1;
+}
+
+message GetListVoiceRequest {
+  VoiceTargetType target_type = 1;
+  int64 target_id = 2;
+  VoiceStatus status = 3;
+  string provider = 4;
+
+  // Paging
+  int32 offset = 10;
+  int32 limit = 11;
+}
+
+message ListVoiceResponse {
+  repeated Voice items = 1;
+  string next_cursor = 2;
+  bool has_next = 3;
+}
+
+service VoiceService {
+  rpc Get(GetVoiceRequest) returns (Voice);
+  rpc MultiGet(MultiGetVoiceRequest) returns (ListVoiceResponse);
+  rpc GetList(GetListVoiceRequest) returns (ListVoiceResponse);
+}
+
+// --- EntityEvent ---
+
+message EntityEvent {
+  string event_id = 1;
+  int64 ts_millis = 2;
+
+  EntityType entity_type = 3;
+  int64 entity_id = 4;
+  Action action = 5;
+
+  map<string, string> metadata = 20;
+}
+
+// --- Publisher ---
+
+message Publisher {
+  int64 id = 1;
+
+  string name = 2;
+  string short_name = 3;
+
+  string logo_url = 4;
+  string icon_url = 5;
+
+  string url = 6;
+
+  // Audit (epoch millis)
+  int64 created_at = 20;
+  int64 updated_at = 21;
+}
+
+message GetPublisherRequest {
+  int64 id = 1;
+}
+
+message MultiGetPublisherRequest {
+  repeated int64 ids = 1;
+}
+
+message MultiGetPublisherResponse {
+  repeated Publisher items = 1;
+}
+
+message GetListPublisherRequest {
+  // Filters (optional, mở rộng sau nếu cần)
+  string keyword = 1;
+
+  // Paging
+  int32 offset = 10;
+  int32 limit = 11;
+}
+
+message ListPublisherResponse {
+  repeated Publisher items = 1;
+  string next_cursor = 2;
+  bool has_next = 3;
+}
+
+service PublisherService {
+  rpc Get(GetPublisherRequest) returns (Publisher);
+  rpc MultiGet(MultiGetPublisherRequest) returns (MultiGetPublisherResponse);
+  rpc GetList(GetListPublisherRequest) returns (ListPublisherResponse);
+}
